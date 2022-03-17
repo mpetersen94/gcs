@@ -7,6 +7,7 @@ from pydrake.solvers.mathematicalprogram import (
     CommonSolverOption,
     SolverOptions,
 )
+from pydrake.solvers.gurobi import GurobiSolver
 from pydrake.solvers.mosek import MosekSolver
 
 from spp.rounding import (
@@ -63,8 +64,8 @@ class BaseSPP:
         self.options.SetOption(MosekSolver.id(), "MSK_IPAR_INTPNT_SOLVE_FORM", 1)
         self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
         self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
-        # options.SetOption(GurobiSolver.id(), "MIPGap", 0.01)
-        # options.SetOption(GurobiSolver.id(), "TimeLimit", 30.)
+        self.options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
+        self.options.SetOption(GurobiSolver.id(), "TimeLimit", 3600.0)
 
     def setRoundingStrategy(self, rounding_fn):
         self.rounding_fn = rounding_fn
