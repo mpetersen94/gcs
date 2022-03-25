@@ -33,6 +33,7 @@ class BaseSPP:
 
         self.spp = GraphOfConvexSets()
         self.graph_complete = True
+        self.edge_cost_dict = {}
 
 
     def findEdgesViaOverlaps(self):
@@ -82,10 +83,12 @@ class BaseSPP:
                              "a function or list of functions.")
 
     def ResetGraph(self, vertices):
-        for v in vertices:
-            self.spp.RemoveVertex(v)
         for edge in self.spp.Edges():
             edge.ClearPhiConstraints()
+            if edge.u() in vertices or edge.v() in vertices:
+                self.edge_cost_dict.pop(edge.id())
+        for v in vertices:
+            self.spp.RemoveVertex(v)
 
     def VisualizeGraph(self, file_type="svg"):
         graphviz = self.spp.GetGraphvizString(None, False)
@@ -122,7 +125,7 @@ class BaseSPP:
         active_edges = []
         found_path = False
         for fn in self.rounding_fn:
-            rounded_edges = fn(self.spp, result, start, goal)
+            rounded_edges = fn(self.spp, result, start, goal, edge_cost_dict=self.edge_cost_dict)
             if rounded_edges is None:
                 print(fn.__name__, "could not find a path.")
             else:

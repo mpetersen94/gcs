@@ -1,6 +1,7 @@
 import networkx as nx
+import numpy as np
 
-def greedyForwardPathSearch(spp, result, start, goal):
+def greedyForwardPathSearch(spp, result, start, goal, **kwargs):
     # Extract path with a tree walk
     vertices = [start]
     active_edges = []
@@ -38,7 +39,7 @@ def greedyForwardPathSearch(spp, result, start, goal):
             vertices.append(max_edge.v())
     return active_edges
 
-def greedyBackwardPathSearch(spp, result, start, goal):
+def greedyBackwardPathSearch(spp, result, start, goal, **kwargs):
     # Extract path with a tree walk
     vertices = [goal]
     active_edges = []
@@ -76,7 +77,53 @@ def greedyBackwardPathSearch(spp, result, start, goal):
             vertices.insert(0, max_edge.u())
     return active_edges
 
-def dijkstraRounding(gcs, result, source, target, flow_min=1e-4):
+def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow_min=1e-4, **kwargs):
+    G = nx.DiGraph()
+    G.add_nodes_from(gcs.Vertices())
+
+    vertex_data = {}
+    for v in gcs.Vertices():
+        vertex_data[v.id()] = np.zeros(v.set().ambient_dimension() + 1)
+
+    for e in gcs.Edges():
+        vertex_data[e.u().id()][:-1] += e.GetSolutionPhiXu(result)
+        vertex_data[e.u().id()][-1] += result.GetSolution(e.phi())
+        if e.v() == goal:
+            vertex_data[goal.id()][:-1] += e.GetSolutionPhiXv(result)
+            vertex_data[goal.id()][-1] += result.GetSolution(e.phi())
+
+    for v in gcs.Vertices():
+        if vertex_data[v.id()][-1] > flow_min:
+            vertex_data[v.id()] = vertex_data[v.id()][:-1] / vertex_data[v.id()][-1]
+        else:
+            vertex_data[v.id()] = np.zeros(v.set().ambient_dimension())
+
+    for e in gcs.Edges():
+        G.add_edge(e.u(), e.v())
+        e_cost = 0
+        for cost in edge_cost_dict[e.id()]:
+            if len(cost.variables()) == e.u().set().ambient_dimension():
+                e_cost += cost.evaluator().Eval(vertex_data[e.u().id()])
+            elif len(cost.variables()) == e.u().set().ambient_dimension() + e.v().set().ambient_dimension():
+                e_cost += cost.evaluator().Eval(np.append(vertex_data[e.u().id()], vertex_data[e.v().id()]))
+            else:
+                raise Exception("Unclear what variables are used in this cost.")
+        G.edges[e.u(), e.v()]['l'] = np.squeeze(e_cost)
+        if G.edges[e.u(), e.v()]['l'] < 0:
+            G.edges[e.u(), e.v()]['l'] = np.inf
+
+    path = nx.bidirectional_dijkstra(G, start, goal, 'l')[1]
+
+    active_edges = []
+    for u, v in zip(path[:-1], path[1:]):
+        for e in gcs.Edges():
+            if e.u() == u and e.v() == v:
+                active_edges.append(e)
+                break
+
+    return active_edges
+
+def dijkstraRounding(gcs, result, source, target, flow_min=1e-4, **kwargs):
     G = nx.DiGraph()
     G.add_nodes_from(gcs.Vertices())
     G.add_edges_from([(e.u(), e.v()) for e in gcs.Edges()])
