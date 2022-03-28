@@ -13,6 +13,7 @@ from pydrake.solvers.mosek import MosekSolver
 from spp.preprocessing import removeRedundancies
 from spp.rounding import (
     greedyForwardPathSearch,
+    MipPathExtraction,
 )
 
 class BaseSPP:
@@ -121,22 +122,22 @@ class BaseSPP:
                   "Cost:", result.get_optimal_cost(),
                   "Solver time:", result.get_solver_details().optimizer_time)
 
-        # Extract path
-        active_edges = []
-        found_path = False
-        for fn in self.rounding_fn:
-            rounded_edges = fn(self.spp, result, start, goal, edge_cost_dict=self.edge_cost_dict)
-            if rounded_edges is None:
-                print(fn.__name__, "could not find a path.")
-            else:
-                found_path = True
-            active_edges.append(rounded_edges)
-        if not found_path:
-            print("All rounding strategies failed to find a path.")
-            return None, result, None
-
         # Solve with hard edge choices
         if rounding:
+            # Extract path
+            active_edges = []
+            found_path = False
+            for fn in self.rounding_fn:
+                rounded_edges = fn(self.spp, result, start, goal, edge_cost_dict=self.edge_cost_dict)
+                if rounded_edges is None:
+                    print(fn.__name__, "could not find a path.")
+                else:
+                    found_path = True
+                active_edges.append(rounded_edges)
+            if not found_path:
+                print("All rounding strategies failed to find a path.")
+                return None, result, None
+
             hard_result = []
             found_solution = False
             for path_edges in active_edges:
@@ -167,6 +168,6 @@ class BaseSPP:
                 print("Second solve failed on all paths.")
                 return None, result, hard_result
         else:
+            active_edges = MipPathExtraction(self.spp, result, start, goal)
             hard_result = [result]
-            active_edges = [active_edges[0]]
         return active_edges, result, hard_result

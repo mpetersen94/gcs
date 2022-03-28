@@ -1,11 +1,35 @@
 import networkx as nx
 import numpy as np
 
-def greedyForwardPathSearch(spp, result, start, goal, **kwargs):
+def MipPathExtraction(gcs, result, start, goal, **kwargs):
+    print("Explicit Rounding")
+    outgoing_edges = {}
+    for v in gcs.Vertices():
+        outgoing_edges[v.id()] = []
+
+    for e in gcs.Edges():
+        outgoing_edges[e.u().id()].append(e)
+
+    active_edges = []
+    for edge in outgoing_edges[start.id()]:
+        phi = result.GetSolution(edge.phi())
+        if phi > 0.5:
+            active_edges.append(edge)
+            break
+
+    while active_edges[-1].v() != goal:
+        for edge in outgoing_edges[active_edges[-1].v().id()]:
+            phi = result.GetSolution(edge.phi())
+            if phi > 0.5:
+                active_edges.append(edge)
+                break
+    return active_edges
+
+def greedyForwardPathSearch(gcs, result, start, goal, **kwargs):
     # Extract path with a tree walk
     vertices = [start]
     active_edges = []
-    unused_edges = spp.Edges()
+    unused_edges = gcs.Edges()
     max_phi = 0
     max_edge = None
     for edge in unused_edges:
@@ -39,11 +63,11 @@ def greedyForwardPathSearch(spp, result, start, goal, **kwargs):
             vertices.append(max_edge.v())
     return active_edges
 
-def greedyBackwardPathSearch(spp, result, start, goal, **kwargs):
+def greedyBackwardPathSearch(gcs, result, start, goal, **kwargs):
     # Extract path with a tree walk
     vertices = [goal]
     active_edges = []
-    unused_edges = spp.Edges()
+    unused_edges = gcs.Edges()
     max_phi = 0
     max_edge = None
     for edge in unused_edges:
