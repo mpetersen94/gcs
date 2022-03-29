@@ -131,9 +131,10 @@ class BaseSPP:
                 rounded_edges = fn(self.spp, result, start, goal, edge_cost_dict=self.edge_cost_dict)
                 if rounded_edges is None:
                     print(fn.__name__, "could not find a path.")
+                    active_edges.append(rounded_edges)
                 else:
                     found_path = True
-                active_edges.append(rounded_edges)
+                    active_edges.extend(rounded_edges)
             if not found_path:
                 print("All rounding strategies failed to find a path.")
                 return None, result, None

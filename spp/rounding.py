@@ -23,7 +23,7 @@ def MipPathExtraction(gcs, result, start, goal, **kwargs):
             if phi > 0.5:
                 active_edges.append(edge)
                 break
-    return active_edges
+    return [active_edges]
 
 def greedyForwardPathSearch(gcs, result, start, goal, **kwargs):
     # Extract path with a tree walk
@@ -61,7 +61,7 @@ def greedyForwardPathSearch(gcs, result, start, goal, **kwargs):
             vertices = vertices[:loop_index+1]
         else:
             vertices.append(max_edge.v())
-    return active_edges
+    return [active_edges]
 
 def greedyBackwardPathSearch(gcs, result, start, goal, **kwargs):
     # Extract path with a tree walk
@@ -99,7 +99,52 @@ def greedyBackwardPathSearch(gcs, result, start, goal, **kwargs):
             vertices = vertices[loop_index:]
         else:
             vertices.insert(0, max_edge.u())
-    return active_edges
+    return [active_edges]
+
+def randomPathSearch(gcs, result, start, goal, seed=None, num_paths=10, flow_min=1e-8, **kwargs):
+    if seed is not None:
+        np.random.seed(seed)
+
+    paths = []
+    for _ in range(num_paths):
+
+        outgoing_edges = {}
+        for v in gcs.Vertices():
+            outgoing_edges[v.id()] = []
+
+        for e in gcs.Edges():
+            outgoing_edges[e.u().id()].append(e)
+
+        # Extract path with a tree walk
+        vertices = [start]
+        visited_vertices = [start]
+        active_edges = []
+
+        while vertices[-1] != goal:
+            e_out = outgoing_edges[vertices[-1].id()]
+            phi_values = np.empty(len(e_out))
+            for ii in range(len(e_out)):
+                phi_values[ii] = result.GetSolution(e_out[ii].phi())
+            if len(e_out) == 0 or np.sum(phi_values) < flow_min:
+                active_edges.pop()
+                vertices.pop()
+                if len(vertices) == 0:
+                    break
+                continue
+
+            edge = np.random.choice(e_out, p=phi_values / np.sum(phi_values))
+            e_out.remove(edge)
+            if edge.v() not in visited_vertices:
+                active_edges.append(edge)
+                vertices.append(edge.v())
+                visited_vertices.append(edge.v())
+
+        if active_edges[-1].v() == goal:
+            paths.append(active_edges)
+
+    if len(paths) == 0:
+        return None
+    return paths
 
 def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow_min=1e-4, **kwargs):
     G = nx.DiGraph()
@@ -145,7 +190,7 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
                 active_edges.append(e)
                 break
 
-    return active_edges
+    return [active_edges]
 
 def dijkstraRounding(gcs, result, source, target, flow_min=1e-4, **kwargs):
     G = nx.DiGraph()
@@ -166,4 +211,4 @@ def dijkstraRounding(gcs, result, source, target, flow_min=1e-4, **kwargs):
                 active_edges.append(e)
                 break
 
-    return active_edges
+    return [active_edges]
