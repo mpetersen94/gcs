@@ -2,7 +2,6 @@ import networkx as nx
 import numpy as np
 
 def MipPathExtraction(gcs, result, start, goal, **kwargs):
-    print("Explicit Rounding")
     outgoing_edges = {}
     for v in gcs.Vertices():
         outgoing_edges[v.id()] = []
@@ -165,7 +164,7 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
         if vertex_data[v.id()][-1] > flow_min:
             vertex_data[v.id()] = vertex_data[v.id()][:-1] / vertex_data[v.id()][-1]
         else:
-            vertex_data[v.id()] = np.zeros(v.set().ambient_dimension())
+            vertex_data[v.id()] = v.set().ChebyshevCenter()
 
     for e in gcs.Edges():
         G.add_edge(e.u(), e.v())
@@ -179,6 +178,7 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
                 raise Exception("Unclear what variables are used in this cost.")
         G.edges[e.u(), e.v()]['l'] = np.squeeze(e_cost)
         if G.edges[e.u(), e.v()]['l'] < 0:
+            print(e.name())
             G.edges[e.u(), e.v()]['l'] = np.inf
 
     path = nx.bidirectional_dijkstra(G, start, goal, 'l')[1]
