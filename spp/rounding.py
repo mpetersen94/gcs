@@ -145,7 +145,7 @@ def randomPathSearch(gcs, result, start, goal, seed=None, num_paths=10, flow_min
         return None
     return paths
 
-def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow_min=1e-4, **kwargs):
+def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow_min=1e-3, **kwargs):
     G = nx.DiGraph()
     G.add_nodes_from(gcs.Vertices())
 
@@ -178,8 +178,7 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
                 raise Exception("Unclear what variables are used in this cost.")
         G.edges[e.u(), e.v()]['l'] = np.squeeze(e_cost)
         if G.edges[e.u(), e.v()]['l'] < 0:
-            print(e.name())
-            G.edges[e.u(), e.v()]['l'] = np.inf
+            raise RuntimeError(f"Averaged length of edge {e} is negative. Consider increasing flow_min.")
 
     path = nx.bidirectional_dijkstra(G, start, goal, 'l')[1]
 
