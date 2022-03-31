@@ -42,7 +42,6 @@ def randomEdgeSelector(candidate_edges, flows):
     return np.random.choice(candidate_edges, p=probabilities)
 
 def greedyForwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
-    print('greedyForwardPathSearch')
 
     outgoing_edges = outgoingEdges(gcs)
     flows = optimalFlows(gcs, result)
@@ -58,7 +57,6 @@ def greedyForwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs
     return [depthFirst(source, target, candidateEdges, selector)]
 
 def randomForwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
-    print('randomForwardPathSearch')
 
     if seed is not None:
         np.random.seed(seed)
@@ -77,7 +75,6 @@ def randomForwardPathSearch(gcs, result, source, target, num_paths=10, seed=None
     return [depthFirst(source, target, candidateEdges, selector) for _ in range(num_paths)]
 
 def greedyBackwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
-    print('greedyBackwardPathSearch')
 
     incoming_edges = incomingEdges(gcs)
     flows = optimalFlows(gcs, result)
@@ -93,7 +90,6 @@ def greedyBackwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwarg
     return [depthFirst(target, source, candidateEdges, selector)[::-1]]
 
 def randomBackwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
-    print('randomBackwardPathSearch')
 
     if seed is not None:
         np.random.seed(seed)
@@ -115,7 +111,6 @@ def MipPathExtraction(gcs, result, source, target, **kwargs):
     return greedyForwardPathSearch(gcs, result, source, target)
 
 def averageVertexPositionSpp(gcs, result, source, target, edge_cost_dict=None, flow_min=1e-3, **kwargs):
-    print('averageVertexPositionSpp')
 
     G = nx.DiGraph()
     G.add_nodes_from(gcs.Vertices())
