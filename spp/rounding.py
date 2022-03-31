@@ -1,151 +1,122 @@
 import networkx as nx
 import numpy as np
 
-def MipPathExtraction(gcs, result, start, goal, **kwargs):
-    outgoing_edges = {}
-    for v in gcs.Vertices():
-        outgoing_edges[v.id()] = []
+def depthFirst(source, target, candidateEdges, selector):
+    visited_vertices = [source]
+    path_vertices = [source]
+    path_edges = []
+    while path_vertices[-1] != target:
+        candidate_edges = candidateEdges(path_vertices[-1], visited_vertices)
+        if len(candidate_edges) == 0:
+            path_vertices.pop()
+            path_edges.pop()
+        else:
+            next_edge, next_vertex = selector(candidate_edges)
+            visited_vertices.append(next_vertex)
+            path_vertices.append(next_vertex)
+            path_edges.append(next_edge)
+    return path_edges
 
+def incomingEdges(gcs):
+    incoming_edges = {v.id(): [] for v in gcs.Vertices()}
+    for e in gcs.Edges():
+        incoming_edges[e.v().id()].append(e)
+    return incoming_edges
+
+def outgoingEdges(gcs):
+    outgoing_edges = {u.id(): [] for u in gcs.Vertices()}
     for e in gcs.Edges():
         outgoing_edges[e.u().id()].append(e)
+    return outgoing_edges
 
-    active_edges = []
-    for edge in outgoing_edges[start.id()]:
-        phi = result.GetSolution(edge.phi())
-        if phi > 0.5:
-            active_edges.append(edge)
-            break
+def optimalFlows(gcs, result):
+    return {e.id(): result.GetSolution(e.phi()) for e in gcs.Edges()}
 
-    while active_edges[-1].v() != goal:
-        for edge in outgoing_edges[active_edges[-1].v().id()]:
-            phi = result.GetSolution(edge.phi())
-            if phi > 0.5:
-                active_edges.append(edge)
-                break
-    return [active_edges]
+def greedyEdgeSelector(candidate_edges, flows):
+    candidate_flows = [flows[e.id()] for e in candidate_edges]
+    return candidate_edges[np.argmax(candidate_flows)]
 
-def greedyForwardPathSearch(gcs, result, start, goal, **kwargs):
-    # Extract path with a tree walk
-    vertices = [start]
-    active_edges = []
-    unused_edges = gcs.Edges()
-    max_phi = 0
-    max_edge = None
-    for edge in unused_edges:
-        phi = result.GetSolution(edge.phi())
-        if edge.u() == start and phi > max_phi:
-            max_phi = phi
-            max_edge = edge
-    if max_edge is None:
-        return None
-    active_edges.append(max_edge)
-    unused_edges.remove(max_edge)
-    vertices.append(max_edge.v())
-    
-    while active_edges[-1].v() != goal:
-        max_phi = 0
-        max_edge = None
-        for edge in unused_edges:
-            phi = result.GetSolution(edge.phi())
-            if edge.u() == active_edges[-1].v() and phi > max_phi:
-                max_phi = phi
-                max_edge = edge
-        if max_edge is None:
-            return None
-        active_edges.append(max_edge)
-        unused_edges.remove(max_edge)
-        if max_edge.v() in vertices:
-            loop_index = vertices.index(max_edge.v())
-            active_edges = active_edges[:loop_index]
-            vertices = vertices[:loop_index+1]
-        else:
-            vertices.append(max_edge.v())
-    return [active_edges]
+def randomEdgeSelector(candidate_edges, flows):
+    candidate_flows = np.array([flows[e.id()] for e in candidate_edges])
+    probabilities = candidate_flows/sum(candidate_flows)
+    return np.random.choice(candidate_edges, p=probabilities)
 
-def greedyBackwardPathSearch(gcs, result, start, goal, **kwargs):
-    # Extract path with a tree walk
-    vertices = [goal]
-    active_edges = []
-    unused_edges = gcs.Edges()
-    max_phi = 0
-    max_edge = None
-    for edge in unused_edges:
-        phi = result.GetSolution(edge.phi())
-        if edge.v() == goal and phi > max_phi:
-            max_phi = phi
-            max_edge = edge
-    if max_edge is None:
-        return None
-    active_edges.insert(0, max_edge)
-    unused_edges.remove(max_edge)
-    vertices.insert(0, max_edge.u())
+def greedyForwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
+    print('greedyForwardPathSearch')
 
-    while active_edges[0].u() != start:
-        max_phi = 0
-        max_edge = None
-        for edge in unused_edges:
-            phi = result.GetSolution(edge.phi())
-            if edge.v() == active_edges[0].u() and phi > max_phi:
-                max_phi = phi
-                max_edge = edge
-        if max_edge is None:
-            return None
-        active_edges.insert(0, max_edge)
-        unused_edges.remove(max_edge)
-        if max_edge.u() in vertices:
-            loop_index = vertices.index(max_edge.u())
-            active_edges = active_edges[loop_index+1:]
-            vertices = vertices[loop_index:]
-        else:
-            vertices.insert(0, max_edge.u())
-    return [active_edges]
+    outgoing_edges = outgoingEdges(gcs)
+    flows = optimalFlows(gcs, result)
 
-def randomPathSearch(gcs, result, start, goal, seed=None, num_paths=10, flow_min=1e-8, **kwargs):
+    def candidateEdges(current_vertex, visited_vertices):
+        keepEdge = lambda e: e.v() not in visited_vertices and flows[e.id()] > flow_tol
+        return [e for e in outgoing_edges[current_vertex.id()] if keepEdge(e)]
+
+    def selector(candidate_edges):
+        e = greedyEdgeSelector(candidate_edges, flows)
+        return e, e.v()
+
+    return [depthFirst(source, target, candidateEdges, selector)]
+
+def randomForwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
+    print('randomForwardPathSearch')
+
     if seed is not None:
         np.random.seed(seed)
 
-    paths = []
-    for _ in range(num_paths):
+    outgoing_edges = outgoingEdges(gcs)
+    flows = optimalFlows(gcs, result)
 
-        outgoing_edges = {}
-        for v in gcs.Vertices():
-            outgoing_edges[v.id()] = []
+    def candidateEdges(current_vertex, visited_vertices):
+        keepEdge = lambda e: e.v() not in visited_vertices and flows[e.id()] > flow_tol
+        return [e for e in outgoing_edges[current_vertex.id()] if keepEdge(e)]
 
-        for e in gcs.Edges():
-            outgoing_edges[e.u().id()].append(e)
+    def selector(candidate_edges):
+        e = randomEdgeSelector(candidate_edges, flows)
+        return e, e.v()
 
-        # Extract path with a tree walk
-        vertices = [start]
-        visited_vertices = [start]
-        active_edges = []
+    return [depthFirst(source, target, candidateEdges, selector) for _ in range(num_paths)]
 
-        while vertices[-1] != goal:
-            e_out = outgoing_edges[vertices[-1].id()]
-            phi_values = np.empty(len(e_out))
-            for ii in range(len(e_out)):
-                phi_values[ii] = result.GetSolution(e_out[ii].phi())
-            if len(e_out) == 0 or np.sum(phi_values) < flow_min:
-                active_edges.pop()
-                vertices.pop()
-                if len(vertices) == 0:
-                    break
-                continue
+def greedyBackwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
+    print('greedyBackwardPathSearch')
 
-            edge = np.random.choice(e_out, p=phi_values / np.sum(phi_values))
-            e_out.remove(edge)
-            if edge.v() not in visited_vertices:
-                active_edges.append(edge)
-                vertices.append(edge.v())
-                visited_vertices.append(edge.v())
+    incoming_edges = incomingEdges(gcs)
+    flows = optimalFlows(gcs, result)
 
-        if active_edges[-1].v() == goal:
-            paths.append(active_edges)
+    def candidateEdges(current_vertex, visited_vertices):
+        keepEdge = lambda e: e.u() not in visited_vertices and flows[e.id()] > flow_tol
+        return [e for e in incoming_edges[current_vertex.id()] if keepEdge(e)]
 
-    if len(paths) == 0:
-        return None
-    return paths
+    def selector(candidate_edges):
+        e = greedyEdgeSelector(candidate_edges, flows)
+        return e, e.u()
 
-def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow_min=1e-3, **kwargs):
+    return [depthFirst(target, source, candidateEdges, selector)[::-1]]
+
+def randomBackwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
+    print('randomBackwardPathSearch')
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    incoming_edges = incomingEdges(gcs)
+    flows = optimalFlows(gcs, result)
+
+    def candidateEdges(current_vertex, visited_vertices):
+        keepEdge = lambda e: e.u() not in visited_vertices and flows[e.id()] > flow_tol
+        return [e for e in incoming_edges[current_vertex.id()] if keepEdge(e)]
+
+    def selector(candidate_edges):
+        e = randomEdgeSelector(candidate_edges, flows)
+        return e, e.u()
+
+    return [depthFirst(target, source, candidateEdges, selector)[::-1] for _ in range(num_paths)]
+
+def MipPathExtraction(gcs, result, source, target, **kwargs):
+    return greedyForwardPathSearch(gcs, result, source, target)
+
+def averageVertexPositionSpp(gcs, result, source, target, edge_cost_dict=None, flow_min=1e-3, **kwargs):
+    print('averageVertexPositionSpp')
+
     G = nx.DiGraph()
     G.add_nodes_from(gcs.Vertices())
 
@@ -156,9 +127,9 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
     for e in gcs.Edges():
         vertex_data[e.u().id()][:-1] += e.GetSolutionPhiXu(result)
         vertex_data[e.u().id()][-1] += result.GetSolution(e.phi())
-        if e.v() == goal:
-            vertex_data[goal.id()][:-1] += e.GetSolutionPhiXv(result)
-            vertex_data[goal.id()][-1] += result.GetSolution(e.phi())
+        if e.v() == target:
+            vertex_data[target.id()][:-1] += e.GetSolutionPhiXv(result)
+            vertex_data[target.id()][-1] += result.GetSolution(e.phi())
 
     for v in gcs.Vertices():
         if vertex_data[v.id()][-1] > flow_min:
@@ -180,34 +151,13 @@ def averageVertexPositionSpp(gcs, result, start, goal, edge_cost_dict=None, flow
         if G.edges[e.u(), e.v()]['l'] < 0:
             raise RuntimeError(f"Averaged length of edge {e} is negative. Consider increasing flow_min.")
 
-    path = nx.bidirectional_dijkstra(G, start, goal, 'l')[1]
+    path_vertices = nx.dijkstra_path(G, source, target, 'l')
 
-    active_edges = []
-    for u, v in zip(path[:-1], path[1:]):
+    path_edges = []
+    for u, v in zip(path_vertices[:-1], path_vertices[1:]):
         for e in gcs.Edges():
             if e.u() == u and e.v() == v:
-                active_edges.append(e)
+                path_edges.append(e)
                 break
 
-    return [active_edges]
-
-def dijkstraRounding(gcs, result, source, target, flow_min=1e-4, **kwargs):
-    G = nx.DiGraph()
-    G.add_nodes_from(gcs.Vertices())
-    G.add_edges_from([(e.u(), e.v()) for e in gcs.Edges()])
-
-    for e in gcs.Edges():
-        flow = result.GetSolution(e.phi())
-        if flow > flow_min:
-            G.edges[e.u(), e.v()]['l'] = e.GetSolutionCost(result) / flow
-
-    path = nx.bidirectional_dijkstra(G, source, target, 'l')[1]
-
-    active_edges = []
-    for u, v in zip(path[:-1], path[1:]):
-        for e in gcs.Edges():
-            if e.u() == u and e.v() == v:
-                active_edges.append(e)
-                break
-
-    return [active_edges]
+    return [path_edges]
