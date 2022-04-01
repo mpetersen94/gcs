@@ -1,17 +1,18 @@
 import networkx as nx
 import numpy as np
 
-def depthFirst(source, target, candidateEdges, selector):
+# Helper functions used be various rounding strategies
+def depthFirst(source, target, getCandidateEdgesFn, edgeSelectorFn):
     visited_vertices = [source]
     path_vertices = [source]
     path_edges = []
     while path_vertices[-1] != target:
-        candidate_edges = candidateEdges(path_vertices[-1], visited_vertices)
+        candidate_edges = getCandidateEdgesFn(path_vertices[-1], visited_vertices)
         if len(candidate_edges) == 0:
             path_vertices.pop()
             path_edges.pop()
         else:
-            next_edge, next_vertex = selector(candidate_edges)
+            next_edge, next_vertex = edgeSelectorFn(candidate_edges)
             visited_vertices.append(next_vertex)
             path_vertices.append(next_vertex)
             path_edges.append(next_edge)
@@ -29,7 +30,7 @@ def outgoingEdges(gcs):
         outgoing_edges[e.u().id()].append(e)
     return outgoing_edges
 
-def optimalFlows(gcs, result):
+def extractEdgeFlows(gcs, result):
     return {e.id(): result.GetSolution(e.phi()) for e in gcs.Edges()}
 
 def greedyEdgeSelector(candidate_edges, flows):
@@ -41,20 +42,21 @@ def randomEdgeSelector(candidate_edges, flows):
     probabilities = candidate_flows/sum(candidate_flows)
     return np.random.choice(candidate_edges, p=probabilities)
 
+# Rounding Strategies
 def greedyForwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
 
     outgoing_edges = outgoingEdges(gcs)
-    flows = optimalFlows(gcs, result)
+    flows = extractEdgeFlows(gcs, result)
 
-    def candidateEdges(current_vertex, visited_vertices):
+    def getCandidateEdgesFn(current_vertex, visited_vertices):
         keepEdge = lambda e: e.v() not in visited_vertices and flows[e.id()] > flow_tol
         return [e for e in outgoing_edges[current_vertex.id()] if keepEdge(e)]
 
-    def selector(candidate_edges):
+    def edgeSelectorFn(candidate_edges):
         e = greedyEdgeSelector(candidate_edges, flows)
         return e, e.v()
 
-    return [depthFirst(source, target, candidateEdges, selector)]
+    return [depthFirst(source, target, getCandidateEdgesFn, edgeSelectorFn)]
 
 def randomForwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
 
@@ -62,32 +64,32 @@ def randomForwardPathSearch(gcs, result, source, target, num_paths=10, seed=None
         np.random.seed(seed)
 
     outgoing_edges = outgoingEdges(gcs)
-    flows = optimalFlows(gcs, result)
+    flows = extractEdgeFlows(gcs, result)
 
-    def candidateEdges(current_vertex, visited_vertices):
+    def getCandidateEdgesFn(current_vertex, visited_vertices):
         keepEdge = lambda e: e.v() not in visited_vertices and flows[e.id()] > flow_tol
         return [e for e in outgoing_edges[current_vertex.id()] if keepEdge(e)]
 
-    def selector(candidate_edges):
+    def edgeSelectorFn(candidate_edges):
         e = randomEdgeSelector(candidate_edges, flows)
         return e, e.v()
 
-    return [depthFirst(source, target, candidateEdges, selector) for _ in range(num_paths)]
+    return [depthFirst(source, target, getCandidateEdgesFn, edgeSelectorFn) for _ in range(num_paths)]
 
 def greedyBackwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs):
 
     incoming_edges = incomingEdges(gcs)
-    flows = optimalFlows(gcs, result)
+    flows = extractEdgeFlows(gcs, result)
 
-    def candidateEdges(current_vertex, visited_vertices):
+    def getCandidateEdgesFn(current_vertex, visited_vertices):
         keepEdge = lambda e: e.u() not in visited_vertices and flows[e.id()] > flow_tol
         return [e for e in incoming_edges[current_vertex.id()] if keepEdge(e)]
 
-    def selector(candidate_edges):
+    def edgeSelectorFn(candidate_edges):
         e = greedyEdgeSelector(candidate_edges, flows)
         return e, e.u()
 
-    return [depthFirst(target, source, candidateEdges, selector)[::-1]]
+    return [depthFirst(target, source, getCandidateEdgesFn, edgeSelectorFn)[::-1]]
 
 def randomBackwardPathSearch(gcs, result, source, target, num_paths=10, seed=None, flow_tol=1e-5, **kwargs):
 
@@ -95,17 +97,17 @@ def randomBackwardPathSearch(gcs, result, source, target, num_paths=10, seed=Non
         np.random.seed(seed)
 
     incoming_edges = incomingEdges(gcs)
-    flows = optimalFlows(gcs, result)
+    flows = extractEdgeFlows(gcs, result)
 
-    def candidateEdges(current_vertex, visited_vertices):
+    def getCandidateEdgesFn(current_vertex, visited_vertices):
         keepEdge = lambda e: e.u() not in visited_vertices and flows[e.id()] > flow_tol
         return [e for e in incoming_edges[current_vertex.id()] if keepEdge(e)]
 
-    def selector(candidate_edges):
+    def edgeSelectorFn(candidate_edges):
         e = randomEdgeSelector(candidate_edges, flows)
         return e, e.u()
 
-    return [depthFirst(target, source, candidateEdges, selector)[::-1] for _ in range(num_paths)]
+    return [depthFirst(target, source, getCandidateEdgesFn, edgeSelectorFn)[::-1] for _ in range(num_paths)]
 
 def MipPathExtraction(gcs, result, source, target, **kwargs):
     return greedyForwardPathSearch(gcs, result, source, target)
