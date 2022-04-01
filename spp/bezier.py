@@ -190,18 +190,19 @@ class BezierSPP(BaseSPP):
                 self.edge_cost_dict[edge.id()].append(
                     edge.AddCost(Binding[Cost](energy_cost, edge.xu()))[1])
 
-    def addAccelerationRegularization(self, weight_rddot, weight_hddot):
-        for weight in [weight_rddot, weight_hddot]:
+    def addDerivativeRegularization(self, weight_r, weight_h, order):
+
+        assert isinstance(order, int) and 2 <= order <= self.order
+        weights = [weight_r, weight_h]
+        for weight in weights:
             assert isinstance(weight, float) or isinstance(weight, int)
 
         trajectories = [self.u_r_trajectory, self.u_h_trajectory]
-        weights = [weight_rddot, weight_hddot]
-
         for traj, weight in zip(trajectories, weights):
-            ddot_control = traj.MakeDerivative(2).control_points()
-            for c in ddot_control:
+            derivative_control = traj.MakeDerivative(order).control_points()
+            for c in derivative_control:
                 A_ctrl = DecomposeLinearExpressions(c, self.u_vars)
-                H = A_ctrl.T.dot(A_ctrl) * 2 * weight / (self.order - 1)
+                H = A_ctrl.T.dot(A_ctrl) * 2 * weight / (1 + self.order - order)
                 reg_cost = QuadraticCost(H, np.zeros(H.shape[0]), 0)
                 self.edge_costs.append(reg_cost)
 
