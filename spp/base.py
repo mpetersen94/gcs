@@ -12,8 +12,8 @@ from pydrake.solvers.mosek import MosekSolver
 
 from spp.preprocessing import removeRedundancies
 from spp.rounding import (
-    greedyForwardPathSearch,
     MipPathExtraction,
+    randomForwardPathSearch,
 )
 
 class BaseSPP:
@@ -28,7 +28,7 @@ class BaseSPP:
         self.regions = regions.copy()
         self.solver = None
         self.options = None
-        self.rounding_fn = [greedyForwardPathSearch]
+        self.rounding_fn = [randomForwardPathSearch]
         for r in self.regions:
             assert r.ambient_dimension() == self.dimension
 
