@@ -69,7 +69,7 @@ class BaseSPP:
         self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
         self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
         self.options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
-        self.options.SetOption(GurobiSolver.id(), "TimeLimit", 3600.0)
+        self.options.SetOption(GurobiSolver.id(), "TimeLimit", 7200.0)
 
     def setRoundingStrategy(self, rounding_fn):
         if callable(rounding_fn):
@@ -84,6 +84,7 @@ class BaseSPP:
                              "a function or list of functions.")
 
     def ResetGraph(self, vertices):
+        return
         for edge in self.spp.Edges():
             edge.ClearPhiConstraints()
             if edge.u() in vertices or edge.v() in vertices:
