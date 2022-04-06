@@ -107,14 +107,19 @@ class BaseSPP:
             raise NotImplementedError(
                 "Replanning on a graph that has undergone preprocessing is "
                 "not supported yet. Please construct a new planner.")
+        statistics = {}
         if preprocessing:
-            removeRedundancies(self.spp, start, goal, verbose=verbose)
+            statistics["preprocessing"] = removeRedundancies(self.spp, start, goal, verbose=verbose)
             self.graph_complete = False
 
         result = self.spp.SolveShortestPath(start, goal, rounding, self.solver, self.options)
+
+        statistics["solver_time"] = result.get_solver_details().optimizer_time
+        statistics["result_cost"] = result.get_optimal_cost()
+
         if not result.is_success():
             print("First solve failed")
-            return None, result, None
+            return None, result, None, statistics
 
         if verbose:
             print("Solution\t",
@@ -137,7 +142,7 @@ class BaseSPP:
                     active_edges.extend(rounded_edges)
             if not found_path:
                 print("All rounding strategies failed to find a path.")
-                return None, result, None
+                return None, result, None, statistics
 
             hard_result = []
             found_solution = False
@@ -154,6 +159,10 @@ class BaseSPP:
                     start, goal, rounding, self.solver, self.options))
                 if hard_result[-1].is_success():
                     found_solution = True
+
+            statistics["min_hard_solver_time"] =  min(list(map(lambda r: r.get_solver_details().optimizer_time, hard_result)), default = 0.0)
+            statistics["min_hard_optimal_cost"] =  min(list(map(lambda r: r.get_optimal_cost(), hard_result)), default = 0.0)
+
             if verbose:
                 print("Rounded Solutions:")
                 for r in hard_result:
@@ -167,8 +176,9 @@ class BaseSPP:
 
             if not found_solution:
                 print("Second solve failed on all paths.")
-                return None, result, hard_result
+                return None, result, hard_result, statistics
         else:
             active_edges = MipPathExtraction(self.spp, result, start, goal)
             hard_result = [result]
-        return active_edges, result, hard_result
+            statistics["min_hard_solver_time"] =  0.0
+        return active_edges, result, hard_result, statistics
