@@ -64,12 +64,12 @@ class BaseSPP:
     def setPaperSolverOptions(self):
         self.options = SolverOptions()
         self.options.SetOption(CommonSolverOption.kPrintToConsole, 1)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_INTPNT_CO_TOL_REL_GAP", 1e-3)
-        self.options.SetOption(MosekSolver.id(), "MSK_IPAR_INTPNT_SOLVE_FORM", 1)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
-        self.options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
-        self.options.SetOption(GurobiSolver.id(), "TimeLimit", 7200.0)
+        # self.options.SetOption(MosekSolver.id(), "MSK_DPAR_INTPNT_CO_TOL_REL_GAP", 1e-3)
+        # self.options.SetOption(MosekSolver.id(), "MSK_IPAR_INTPNT_SOLVE_FORM", 1)
+        # self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
+        # self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
+        # self.options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
+        # self.options.SetOption(GurobiSolver.id(), "TimeLimit", 7200.0)
 
     def setRoundingStrategy(self, rounding_fn):
         if callable(rounding_fn):
