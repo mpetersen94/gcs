@@ -68,7 +68,7 @@ def runTrials(source, target, getCandidateEdgesFn, edgeSelectorFn, max_paths=10,
             paths.append(path)
     return paths
 
-def randomForwardPathSearch(gcs, result, source, target, max_paths=10, max_trials=100, seed=0, flow_tol=1e-5, **kwargs):
+def randomForwardPathSearch(gcs, result, source, target, max_paths=10, max_trials=100, seed=None, flow_tol=1e-5, **kwargs):
 
     if seed is not None:
         np.random.seed(seed)
