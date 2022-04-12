@@ -61,7 +61,7 @@ def greedyForwardPathSearch(gcs, result, source, target, flow_tol=1e-5, **kwargs
 def runTrials(source, target, getCandidateEdgesFn, edgeSelectorFn, max_paths=10, max_trials=1000):
     paths = []
     trials = 0
-    while len(paths) <= max_paths and trials <= max_trials:
+    while len(paths) < max_paths and trials < max_trials:
         trials += 1
         path = depthFirst(source, target, getCandidateEdgesFn, edgeSelectorFn)
         if path not in paths:
