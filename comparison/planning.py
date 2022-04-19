@@ -27,8 +27,12 @@ class ClassicalPlanning:
         self.diagram = diagram
         self.collision_step_size = collision_step_size
 
-        self.PositionUpperLimits = self.plant.GetPositionUpperLimits()
-        self.PositionLowerLimits = self.plant.GetPositionLowerLimits()
+        try:
+            self.PositionUpperLimits = self.plant.GetPositionUpperLimits()
+            self.PositionLowerLimits = self.plant.GetPositionLowerLimits()
+        except:
+            self.PositionUpperLimits = None
+            self.PositionLowerLimits = None
 
         self.RNG = RandomGenerator(seed)
         np.random.seed(seed)
