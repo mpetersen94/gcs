@@ -98,7 +98,7 @@ def draw_grid_world(grid, start, goal, indoor_edges, outdoor_edges):
     plt.ylim([-2, grid.shape[1]])
     
 # Compile that into a Drake scene by assembling walls, floor, and ceiling tiles together.
-def compile_sdf(output_file, grid, start, goal, indoor_edges, outdoor_edges, seed=None, overlap=False):
+def compile_sdf(output_file, grid, start, goal, indoor_edges, outdoor_edges, seed=None):
     '''
         Glue together constituent SDFs into one big SDF for the whole scene.
     '''
@@ -204,18 +204,12 @@ def compile_sdf(output_file, grid, start, goal, indoor_edges, outdoor_edges, see
                     tf = RigidTransform(p=np.r_[tree_pose, 0])
                     include_static_sdf_at_pose("tree_%05d_%05d" % (i, j), "models/room_gen/tree.sdf", tf)
                     
-                    if overlap:
-                        regions.append(HPolyhedron.MakeBox(lb, [ub[0], tree_pose[1] - 0.5, ub[2]]))
-                        regions.append(HPolyhedron.MakeBox(lb, [tree_pose[0] - 0.5, ub[1], ub[2]]))
-                        regions.append(HPolyhedron.MakeBox([lb[0], tree_pose[1] + 0.5, lb[2]], ub))
-                        regions.append(HPolyhedron.MakeBox([tree_pose[0] + 0.5, lb[1], lb[2]], ub))
-                    else:
-                        regions.append(HPolyhedron.MakeBox(lb, [ub[0], tree_pose[1] - 0.5, ub[2]]))
-                        regions.append(HPolyhedron.MakeBox([lb[0], tree_pose[1] - 0.5, lb[2]],
-                                                           [tree_pose[0] - 0.5, tree_pose[1] + 0.5, ub[2]]))
-                        regions.append(HPolyhedron.MakeBox([tree_pose[0] + 0.5, tree_pose[1] - 0.5, lb[2]],
-                                                           [ub[0], tree_pose[1] + 0.5, ub[2]]))
-                        regions.append(HPolyhedron.MakeBox([lb[0], tree_pose[1] + 0.5, lb[2]], ub))
+                    regions.append(HPolyhedron.MakeBox(lb, [ub[0], tree_pose[1] - 0.5, ub[2]]))
+                    regions.append(HPolyhedron.MakeBox([lb[0], tree_pose[1] - 0.5, lb[2]],
+                                                        [tree_pose[0] - 0.5, tree_pose[1] + 0.5, ub[2]]))
+                    regions.append(HPolyhedron.MakeBox([tree_pose[0] + 0.5, tree_pose[1] - 0.5, lb[2]],
+                                                        [ub[0], tree_pose[1] + 0.5, ub[2]]))
+                    regions.append(HPolyhedron.MakeBox([lb[0], tree_pose[1] + 0.5, lb[2]], ub))
 
     # Wall pass through constants
     door_width = 1.25 - 2 * quad_radius

@@ -84,6 +84,15 @@ class BaseSPP:
         edges = []
         for ii in range(len(self.regions)):
             for jj in range(ii + 1, len(self.regions)):
+                if self.regions[ii].IntersectsWith(self.regions[jj]):
+                    edges.append((ii, jj))
+                    edges.append((jj, ii))
+        return edges
+
+    def findEdgesViaFullDimensionOverlaps(self):
+        edges = []
+        for ii in range(len(self.regions)):
+            for jj in range(ii + 1, len(self.regions)):
                 A = np.vstack((self.regions[ii].A(), self.regions[jj].A()))
                 b = np.concatenate((self.regions[ii].b(), self.regions[jj].b()))
                 if polytopeDimension(A, b) >= self.dimension - 1:
