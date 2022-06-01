@@ -439,3 +439,132 @@ def _make_bars(gcs_data, prm_data, sprm_data, round_to=2):
 
     plt.xticks(ticks)
     plt.grid()
+
+from pydrake.common.eigen_geometry import Quaternion
+
+from drake_blender_visualizer.blender_visualizer import (
+    BlenderColorCamera,
+)
+
+def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filename = ""):
+    if not isinstance(traj_list, list):
+        traj_list = [traj_list]
+
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
+    inspector = scene_graph.model_inspector()
+
+    parser = Parser(plant, scene_graph)
+    parser.package_map().Add("gcs", GcsDir())
+
+    directives_file = FindModelFile("models/iiwa14_spheres_collision_welded_gripper.yaml")
+    directives = LoadModelDirectives(directives_file)
+    models = ProcessModelDirectives(directives, plant, parser)
+    [iiwa_start, wsg_start, shelf, binR, binL, table] =  models
+
+    iiwa_file = FindResourceOrThrow(
+        "drake/manipulation/models/iiwa_description/urdf/iiwa14_spheres_collision.urdf")
+    wsg_file = FindModelFile("models/schunk_wsg_50_welded_fingers.sdf")
+    iiwa_end = parser.AddModelFromFile(iiwa_file, "iiwa2")
+    wsg_end = parser.AddModelFromFile(wsg_file, "wsg2")
+    plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("base", iiwa_end), RigidTransform())
+    plant.WeldFrames(plant.GetFrameByName("iiwa_link_7", iiwa_end), plant.GetFrameByName("body", wsg_end),
+                        RigidTransform(rpy=RollPitchYaw([np.pi/2., 0, 0]), p=[0, 0, 0.114]))
+
+    # arm_model_ids = [iiwa_start.model_instance, wsg_start.model_instance]
+    arm_model_ids = [iiwa_start.model_instance, wsg_start.model_instance, iiwa_end, wsg_end]
+    lower_alpha(plant, inspector, arm_model_ids, alpha, scene_graph)
+
+    plant.Finalize()
+
+    # Set up the blender color camera using that camera, and specifying
+    # the environment map and a material to apply to the "ground" object.
+    # If you wanted to further rotate the scene (to e.g. rotate the background
+    # of the scene relative to the table coordinate system), you could apply an
+    # extra yaw here.
+    out_directory = os.path.join(GcsDir(), "data/prm_comparison/renders", filename)
+    os.system("mkdir -p " + str(out_directory))
+    size_factor = 2
+    blender_color_cam = builder.AddSystem(BlenderColorCamera(
+        scene_graph,
+        draw_period=0.03333/2.,
+        camera_tfs=[camera_X],
+        resolution=[size_factor*640, size_factor*480],
+        zmq_url="tcp://127.0.0.1:5556",
+        # env_map_path=FindModelFile("models/env_maps/empty_warehouse_01_4k.hdr"),
+        env_map_path=FindModelFile("models/env_maps/white_backdrop.png"),
+        out_prefix=out_directory,
+        # raytraced=False,
+    ))
+    builder.Connect(scene_graph.get_query_output_port(),
+                    blender_color_cam.get_input_port(0))
+
+    diagram = builder.Build()
+
+    context = diagram.CreateDefaultContext()
+    plant_context = plant.GetMyMutableContextFromRoot(context)
+    plant.SetPositions(plant_context, iiwa_start.model_instance,
+                       traj_list[0].value(traj_list[0].start_time()))
+    plant.SetPositions(plant_context, iiwa_end,
+                       traj_list[0].value(traj_list[0].end_time()))
+
+    simulator = Simulator(diagram)
+    simulator.Initialize()
+
+    if show_line:
+        c_list_rgb = [[0, 0, 1, 1], [1, 0.75, 0, 1], [1, 0.25, 0, 1]]
+        for i, traj in enumerate(traj_list):
+            X_list = ForwardKinematics(traj.vector_values(
+                np.linspace(traj.start_time(), traj.end_time(), 100)).T.tolist())
+
+            blender_color_cam.bsi.send_remote_call(
+                "register_material",
+                name="mat_traj_%d" % i,
+                material_type="color",
+                color=c_list_rgb[i]
+            )
+            blender_color_cam.bsi.send_remote_call(
+                "update_material_parameters",
+                type="Principled BSDF",
+                name="mat_traj_%d" % i,
+                **{"Specular": 0.0}
+            )
+            blender_color_cam.bsi.send_remote_call(
+                "update_material_parameters",
+                type=None,
+                name="mat_traj_%d" % i,
+                **{"blend_method": "ADD"}
+            )
+            for j, X in enumerate(X_list):
+                blender_color_cam.bsi.send_remote_call(
+                    "register_object",
+                    name="traj_%d_point_%d" % (i, j),
+                    type="sphere",
+                    scale=[0.01, 0.01, 0.01],
+                    location=X.translation().tolist(),
+                    material="mat_traj_%d" % i,
+                )
+                if j > 0:
+                    x0 = X_list[j-1].translation()
+                    x1 = X.translation()
+                    dist = np.linalg.norm(x1 - x0)
+                    quat = np.r_[dist + np.dot(x1 - x0, [0,0,1]), np.cross([0,0,1], x1 - x0)]
+                    quat = quat/np.linalg.norm(quat)
+                    blender_color_cam.bsi.send_remote_call(
+                        "register_object",
+                        name="traj_%d_link_%d" % (i, j-1),
+                        type="cylinder",
+                        scale=[0.01, 0.01, dist/2],
+                        location=((x0 + x1)/2).tolist(),
+                        quaternion=quat.tolist(),
+                        material="mat_traj_%d" % i,
+                    )
+
+            # pointcloud = PointCloud(len(X_list))
+            # pointcloud.mutable_xyzs()[:] = np.array(list(map(lambda X: X.translation(), X_list))).T[:]
+            # meshcat.SetObject("paths/" + str(i), pointcloud, 0.015,
+            #                   rgba=Rgba(*c_list_rgb[i]))
+
+    context.SetTime(1.0)
+    blender_context = blender_color_cam.GetMyContextFromRoot(context)
+    blender_color_cam.Publish(blender_context)
