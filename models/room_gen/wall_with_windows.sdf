@@ -2,7 +2,7 @@
   <model name="Robot">
     <link name="Robot">
       <visual name="mesh">
-        <pose>0.0 0. 0. 0.0 0.0 -1.57</pose>
+        <pose>0.0 0.0 0.0 1.57079632679 0.0 3.14159265359</pose>
         <geometry>
           <mesh>
             <uri>wall_with_windows.obj</uri>
