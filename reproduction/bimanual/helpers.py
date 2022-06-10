@@ -507,3 +507,162 @@ def generate_segment_pics(traj, segment, meshcat):
 
     plant.SetPositions(plant_context, np.concatenate((q_waypoints[:, 0], q_waypoints[:, -1])))
     diagram.ForcedPublish(context)
+
+from drake_blender_visualizer.blender_visualizer import (
+    BlenderColorCamera,
+)
+
+def render_trajectory(traj, camera_X, alpha = 0.5, filename = ""):
+    builder = DiagramBuilder()
+
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.0)
+    inspector = scene_graph.model_inspector()
+
+    parser = Parser(plant, scene_graph)
+    parser.package_map().Add("gcs", GcsDir())
+
+    directives_file = FindModelFile("models/bimanual_iiwa.yaml")
+    iiwa_file = FindResourceOrThrow(
+        "drake/manipulation/models/iiwa_description/urdf/iiwa14_spheres_collision.urdf")
+    wsg_file = FindModelFile("models/schunk_wsg_50_welded_fingers.sdf")
+    directives = LoadModelDirectives(directives_file)
+    models = ProcessModelDirectives(directives, plant, parser)
+    [iiwa1_start, wsg1_start, iiwa2_start, wsg2_start, shelf, binR, binL, table] =  models
+    
+    iiwa1_goal = parser.AddModelFromFile(iiwa_file, "iiwa1_goal")
+    wsg1_goal = parser.AddModelFromFile(wsg_file, "wsg1_goal")
+    iiwa2_goal = parser.AddModelFromFile(iiwa_file, "iiwa2_goal")
+    wsg2_goal = parser.AddModelFromFile(wsg_file, "wsg2_goal")
+    plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("base", iiwa1_goal),
+                     RigidTransform())
+    plant.WeldFrames(plant.GetFrameByName("iiwa_link_7", iiwa1_goal),
+                     plant.GetFrameByName("body", wsg1_goal),
+                     RigidTransform(rpy=RollPitchYaw([np.pi/2., 0, np.pi/2]), p=[0, 0, 0.114]))
+    plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("base", iiwa2_goal),
+                     RigidTransform([0, 0.5, 0]))
+    plant.WeldFrames(plant.GetFrameByName("iiwa_link_7", iiwa2_goal),
+                     plant.GetFrameByName("body", wsg2_goal),
+                     RigidTransform(rpy=RollPitchYaw([np.pi/2., 0, np.pi/2]), p=[0, 0, 0.114]))
+
+    arm_models = [iiwa1_start.model_instance, wsg1_start.model_instance,
+                  iiwa2_start.model_instance, wsg2_start.model_instance,
+                  iiwa1_goal, wsg1_goal, iiwa2_goal, wsg2_goal]
+    lower_alpha(plant, scene_graph.model_inspector(), arm_models, alpha, scene_graph)
+
+    plant.Finalize()
+
+    # Set up the blender color camera using that camera, and specifying
+    # the environment map and a material to apply to the "ground" object.
+    # If you wanted to further rotate the scene (to e.g. rotate the background
+    # of the scene relative to the table coordinate system), you could apply an
+    # extra yaw here.
+    out_directory = os.path.join(GcsDir(), "data/bimanual/renders", filename)
+    os.system("mkdir -p " + str(out_directory))
+    size_factor = 2
+    blender_color_cam = builder.AddSystem(BlenderColorCamera(
+        scene_graph,
+        draw_period=0.03333/2.,
+        camera_tfs=[camera_X],
+        resolution=[size_factor*640, size_factor*480],
+        zmq_url="tcp://127.0.0.1:5556",
+        # env_map_path=FindModelFile("models/env_maps/empty_warehouse_01_4k.hdr"),
+        env_map_path=FindModelFile("models/env_maps/white_backdrop.png"),
+        out_prefix=out_directory,
+        # raytraced=False,
+    ))
+    builder.Connect(scene_graph.get_query_output_port(),
+                    blender_color_cam.get_input_port(0))
+
+    diagram = builder.Build()
+
+    context = diagram.CreateDefaultContext()
+    plant_context = plant.GetMyMutableContextFromRoot(context)
+
+    simulator = Simulator(diagram)
+    simulator.Initialize()
+
+    blender_color_cam.bsi.send_remote_call(
+        "register_material",
+        name="mat_traj",
+        material_type="color",
+        color=[0, 0, 1, 1]
+    )
+    blender_color_cam.bsi.send_remote_call(
+        "update_material_parameters",
+        type="Principled BSDF",
+        name="mat_traj",
+        **{"Specular": 0.0}
+    )
+    blender_color_cam.bsi.send_remote_call(
+        "update_material_parameters",
+        type=None,
+        name="mat_traj",
+        **{"blend_method": "ADD"}
+    )
+
+    t = np.linspace(traj.start_time(), traj.end_time(), 100)
+    last_iiwa1_X = None
+    last_iiwa2_X = None
+    for ii in range(len(t)):
+        plant.SetPositions(plant_context, np.concatenate((
+                np.squeeze(traj.value(t[ii])), np.zeros(14))))
+        iiwa1_X = plant.EvalBodyPoseInWorld(
+            plant_context, plant.GetBodyByName("body", wsg1_start.model_instance))
+        iiwa2_X = plant.EvalBodyPoseInWorld(
+            plant_context, plant.GetBodyByName("body", wsg2_start.model_instance))
+
+        blender_color_cam.bsi.send_remote_call(
+            "register_object",
+            name="iiwa_1_point_%d" % ii,
+            type="sphere",
+            scale=[0.01, 0.01, 0.01],
+            location=iiwa1_X.translation().tolist(),
+            material="mat_traj",
+        )
+        blender_color_cam.bsi.send_remote_call(
+            "register_object",
+            name="iiwa_2_point_%d" % ii,
+            type="sphere",
+            scale=[0.01, 0.01, 0.01],
+            location=iiwa2_X.translation().tolist(),
+            material="mat_traj",
+        )
+
+        if ii > 0:
+            x0 = last_iiwa1_X.translation()
+            x1 = iiwa1_X.translation()
+            dist = np.linalg.norm(x1 - x0)
+            quat = np.r_[dist + np.dot(x1 - x0, [0,0,1]), np.cross([0,0,1], x1 - x0)]
+            quat = quat/np.linalg.norm(quat)
+            blender_color_cam.bsi.send_remote_call(
+                "register_object",
+                name="iiwa_1_link_%d" % (ii-1),
+                type="cylinder",
+                scale=[0.01, 0.01, dist/2],
+                location=((x0 + x1)/2).tolist(),
+                quaternion=quat.tolist(),
+                material="mat_traj",
+            )
+            x0 = last_iiwa2_X.translation()
+            x1 = iiwa2_X.translation()
+            dist = np.linalg.norm(x1 - x0)
+            quat = np.r_[dist + np.dot(x1 - x0, [0,0,1]), np.cross([0,0,1], x1 - x0)]
+            quat = quat/np.linalg.norm(quat)
+            blender_color_cam.bsi.send_remote_call(
+                "register_object",
+                name="iiwa_2_link_%d" % (ii-1),
+                type="cylinder",
+                scale=[0.01, 0.01, dist/2],
+                location=((x0 + x1)/2).tolist(),
+                quaternion=quat.tolist(),
+                material="mat_traj",
+            )
+        
+        last_iiwa1_X = iiwa1_X
+        last_iiwa2_X = iiwa2_X
+
+    context.SetTime(1.0)
+    plant.SetPositions(plant_context,
+                       np.concatenate((traj.value(t[0]), traj.value(t[-1]))))
+    blender_context = blender_color_cam.GetMyContextFromRoot(context)
+    blender_color_cam.ForcedPublish(blender_context)
