@@ -560,11 +560,6 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
                         material="mat_traj_%d" % i,
                     )
 
-            # pointcloud = PointCloud(len(X_list))
-            # pointcloud.mutable_xyzs()[:] = np.array(list(map(lambda X: X.translation(), X_list))).T[:]
-            # meshcat.SetObject("paths/" + str(i), pointcloud, 0.015,
-            #                   rgba=Rgba(*c_list_rgb[i]))
-
     context.SetTime(1.0)
     blender_context = blender_color_cam.GetMyContextFromRoot(context)
     blender_color_cam.Publish(blender_context)

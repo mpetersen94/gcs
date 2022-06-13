@@ -568,7 +568,6 @@ def render_trajectory(traj, camera_X, alpha = 0.5, filename = ""):
         # env_map_path=FindModelFile("models/env_maps/empty_warehouse_01_4k.hdr"),
         env_map_path=FindModelFile("models/env_maps/white_backdrop.png"),
         out_prefix=out_directory,
-        # raytraced=False,
     ))
     builder.Connect(scene_graph.get_query_output_port(),
                     blender_color_cam.get_input_port(0))
@@ -666,3 +665,139 @@ def render_trajectory(traj, camera_X, alpha = 0.5, filename = ""):
                        np.concatenate((traj.value(t[0]), traj.value(t[-1]))))
     blender_context = blender_color_cam.GetMyContextFromRoot(context)
     blender_color_cam.ForcedPublish(blender_context)
+
+
+def render_full_trajectory(traj, camera_X):
+    builder = DiagramBuilder()
+
+    scene_graph = builder.AddSystem(SceneGraph())
+    plant = MultibodyPlant(time_step=0.0)
+    plant.RegisterAsSourceForSceneGraph(scene_graph)
+    parser = Parser(plant)
+    parser.package_map().Add("gcs", GcsDir())
+
+    directives_file = FindModelFile("models/bimanual_iiwa.yaml")
+    directives = LoadModelDirectives(directives_file)
+    models = ProcessModelDirectives(directives, plant, parser)
+    [iiwa_1, wsg_1, iiwa_2, wsg_2, shelf, binR, binL, table] =  models
+
+    plant.Finalize()
+
+    to_pose = builder.AddSystem(MultibodyPositionToGeometryPose(plant))
+    builder.Connect(to_pose.get_output_port(), scene_graph.get_source_pose_port(plant.get_source_id()))
+
+    if type(traj) is list:
+        traj_system = builder.AddSystem(VectorTrajectorySource(traj))
+        end_time = np.sum([t.end_time() for t in traj])
+    else:
+        traj_system = builder.AddSystem(TrajectorySource(traj))
+        end_time = traj.end_time()
+    builder.Connect(traj_system.get_output_port(), to_pose.get_input_port())
+
+    # Set up the blender color camera using that camera, and specifying
+    # the environment map and a material to apply to the "ground" object.
+    # If you wanted to further rotate the scene (to e.g. rotate the background
+    # of the scene relative to the table coordinate system), you could apply an
+    # extra yaw here.
+    out_directory = os.path.join(GcsDir(), "data/bimanual/render_video/")
+    os.system("mkdir -p " + str(out_directory))
+    size_factor = 4
+    blender_color_cam = builder.AddSystem(BlenderColorCamera(
+        scene_graph,
+        draw_period=0.03333/2.,
+        camera_tfs=[camera_X],
+        resolution=[size_factor*640, size_factor*480],
+        zmq_url="tcp://127.0.0.1:5556",
+        # env_map_path=FindModelFile("models/env_maps/empty_warehouse_01_4k.hdr"),
+        env_map_path=FindModelFile("models/env_maps/white_backdrop.png"),
+        out_prefix=out_directory,
+    ))
+    builder.Connect(scene_graph.get_query_output_port(),
+                    blender_color_cam.get_input_port(0))
+
+    vis_diagram = builder.Build()
+    simulator = Simulator(vis_diagram)
+    simulator.Initialize()
+
+    blender_color_cam.bsi.send_remote_call(
+        "register_material",
+        name="mat_traj",
+        material_type="color",
+        color=[0, 0, 1, 1]
+    )
+    blender_color_cam.bsi.send_remote_call(
+        "update_material_parameters",
+        type="Principled BSDF",
+        name="mat_traj",
+        **{"Specular": 0.0}
+    )
+    blender_color_cam.bsi.send_remote_call(
+        "update_material_parameters",
+        type=None,
+        name="mat_traj",
+        **{"blend_method": "ADD"}
+    )
+
+    plant_context = plant.CreateDefaultContext()
+    iiwa1_X = []
+    iiwa2_X = []
+    if type(traj) is list:
+        for t in traj:
+            q_waypoints = t.vector_values(np.linspace(t.start_time(), t.end_time(), 100))
+            for ii in range(q_waypoints.shape[1]):
+                plant.SetPositions(plant_context, q_waypoints[:, ii])
+                iiwa1_X.append(plant.EvalBodyPoseInWorld(
+                    plant_context, plant.GetBodyByName("body", wsg_1.model_instance)))
+                iiwa2_X.append(plant.EvalBodyPoseInWorld(
+                    plant_context, plant.GetBodyByName("body", wsg_2.model_instance)))
+
+    for ii in range(len(iiwa1_X)):
+
+        blender_color_cam.bsi.send_remote_call(
+            "register_object",
+            name="iiwa_1_point_%d" % ii,
+            type="sphere",
+            scale=[0.01, 0.01, 0.01],
+            location=iiwa1_X[ii].translation().tolist(),
+            material="mat_traj",
+        )
+        blender_color_cam.bsi.send_remote_call(
+            "register_object",
+            name="iiwa_2_point_%d" % ii,
+            type="sphere",
+            scale=[0.01, 0.01, 0.01],
+            location=iiwa2_X[ii].translation().tolist(),
+            material="mat_traj",
+        )
+
+        if ii > 0:
+            x0 = iiwa1_X[ii-1].translation()
+            x1 = iiwa1_X[ii].translation()
+            dist = np.linalg.norm(x1 - x0)
+            quat = np.r_[dist + np.dot(x1 - x0, [0,0,1]), np.cross([0,0,1], x1 - x0)]
+            quat = quat/np.linalg.norm(quat)
+            blender_color_cam.bsi.send_remote_call(
+                "register_object",
+                name="iiwa_1_link_%d" % (ii-1),
+                type="cylinder",
+                scale=[0.01, 0.01, dist/2],
+                location=((x0 + x1)/2).tolist(),
+                quaternion=quat.tolist(),
+                material="mat_traj",
+            )
+            x0 = iiwa2_X[ii-1].translation()
+            x1 = iiwa2_X[ii].translation()
+            dist = np.linalg.norm(x1 - x0)
+            quat = np.r_[dist + np.dot(x1 - x0, [0,0,1]), np.cross([0,0,1], x1 - x0)]
+            quat = quat/np.linalg.norm(quat)
+            blender_color_cam.bsi.send_remote_call(
+                "register_object",
+                name="iiwa_2_link_%d" % (ii-1),
+                type="cylinder",
+                scale=[0.01, 0.01, dist/2],
+                location=((x0 + x1)/2).tolist(),
+                quaternion=quat.tolist(),
+                material="mat_traj",
+            )
+
+    simulator.AdvanceTo(end_time)
