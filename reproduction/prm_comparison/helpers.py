@@ -483,8 +483,8 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
     # of the scene relative to the table coordinate system), you could apply an
     # extra yaw here.
     out_directory = os.path.join(GcsDir(), "data/prm_comparison/renders", filename)
-    os.system("mkdir -p " + str(out_directory))
-    size_factor = 2
+    # os.system("mkdir -p " + str(out_directory))
+    size_factor = 8
     blender_color_cam = builder.AddSystem(BlenderColorCamera(
         scene_graph,
         draw_period=0.03333/2.,
@@ -512,7 +512,7 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
     simulator.Initialize()
 
     if show_line:
-        c_list_rgb = [[0, 0, 1, 1], [1, 0.75, 0, 1], [1, 0.25, 0, 1]]
+        c_list_rgb = [[0, 0, 1, 1], [1, 0.75, 0, 1], [1, 0, 0, 1]]
         for i, traj in enumerate(traj_list):
             X_list = ForwardKinematics(traj.vector_values(
                 np.linspace(traj.start_time(), traj.end_time(), 100)).T.tolist())
