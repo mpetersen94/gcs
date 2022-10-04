@@ -3,6 +3,7 @@ import numpy as np
 
 from pydrake.geometry.optimization import (
     GraphOfConvexSets,
+    GraphOfConvexSetsOptions,
     Point,
 )
 from pydrake.solvers.mathematicalprogram import (
@@ -69,14 +70,13 @@ class BaseGCS:
             self.names = ["v" + str(ii) for ii in range(len(regions))]
         self.dimension = regions[0].ambient_dimension()
         self.regions = regions.copy()
-        self.solver = None
-        self.options = None
         self.rounding_fn = [randomForwardPathSearch]
         self.rounding_kwargs = {}
         for r in self.regions:
             assert r.ambient_dimension() == self.dimension
 
         self.gcs = GraphOfConvexSets()
+        self.options = GraphOfConvexSetsOptions()
         self.source = None
         self.target = None
 
@@ -146,20 +146,21 @@ class BaseGCS:
         return edges
 
     def setSolver(self, solver):
-        self.solver = solver
+        self.options.solver = solver
 
     def setSolverOptions(self, options):
-        self.options = options
+        self.options.solver_options = options
 
     def setPaperSolverOptions(self):
-        self.options = SolverOptions()
-        self.options.SetOption(CommonSolverOption.kPrintToConsole, 1)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_INTPNT_CO_TOL_REL_GAP", 1e-3)
-        self.options.SetOption(MosekSolver.id(), "MSK_IPAR_INTPNT_SOLVE_FORM", 1)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
-        self.options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
-        self.options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
-        self.options.SetOption(GurobiSolver.id(), "TimeLimit", 3600.0)
+        solver_options = SolverOptions()
+        solver_options.SetOption(CommonSolverOption.kPrintToConsole, 1)
+        solver_options.SetOption(MosekSolver.id(), "MSK_DPAR_INTPNT_CO_TOL_REL_GAP", 1e-3)
+        solver_options.SetOption(MosekSolver.id(), "MSK_IPAR_INTPNT_SOLVE_FORM", 1)
+        solver_options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_TOL_REL_GAP", 1e-3)
+        solver_options.SetOption(MosekSolver.id(), "MSK_DPAR_MIO_MAX_TIME", 3600.0)
+        solver_options.SetOption(GurobiSolver.id(), "MIPGap", 1e-3)
+        solver_options.SetOption(GurobiSolver.id(), "TimeLimit", 3600.0)
+        self.options.solver_options = solver_options
 
     def setRoundingStrategy(self, rounding_fn, **kwargs):
         self.rounding_kwargs = kwargs
@@ -198,12 +199,11 @@ class BaseGCS:
     def solveGCS(self, rounding, preprocessing, verbose):
 
         results_dict = {}
-        if preprocessing:
-            results_dict["preprocessing_stats"] = removeRedundancies(
-                self.gcs, self.source, self.target, verbose=verbose)
+        self.options.convex_relaxation = rounding
+        self.options.preprocessing = preprocessing
+        self.options.max_rounded_paths = 0
 
-        result = self.gcs.SolveShortestPath(
-            self.source, self.target, rounding, self.solver, self.options)
+        result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
 
         if rounding:
             results_dict["relaxation_result"] = result
@@ -243,6 +243,7 @@ class BaseGCS:
                 print("All rounding strategies failed to find a path.")
                 return None, None, results_dict
 
+            self.options.preprocessing = False
             rounded_results = []
             best_cost = np.inf
             best_path = None
@@ -259,7 +260,7 @@ class BaseGCS:
                     else:
                         edge.AddPhiConstraint(False)
                 rounded_results.append(self.gcs.SolveShortestPath(
-                    self.source, self.target, rounding, self.solver, self.options))
+                    self.source, self.target, self.options))
                 solve_time = rounded_results[-1].get_solver_details().optimizer_time
                 max_rounded_solver_time = np.maximum(solve_time, max_rounded_solver_time)
                 total_rounded_solver_time += solve_time
