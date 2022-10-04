@@ -14,11 +14,7 @@ from pydrake.solvers.gurobi import GurobiSolver
 from pydrake.solvers.mosek import MosekSolver
 from pydrake.all import MathematicalProgram, le
 
-from gcs.preprocessing import removeRedundancies
-from gcs.rounding import (
-    MipPathExtraction,
-    randomForwardPathSearch,
-)
+from gcs.rounding import MipPathExtraction
 
 def polytopeDimension(A, b, tol=1e-4):
     
@@ -70,7 +66,7 @@ class BaseGCS:
             self.names = ["v" + str(ii) for ii in range(len(regions))]
         self.dimension = regions[0].ambient_dimension()
         self.regions = regions.copy()
-        self.rounding_fn = [randomForwardPathSearch]
+        self.rounding_fn = []
         self.rounding_kwargs = {}
         for r in self.regions:
             assert r.ambient_dimension() == self.dimension
@@ -225,7 +221,7 @@ class BaseGCS:
                   "Solver time:", result.get_solver_details().optimizer_time)
 
         # Solve with hard edge choices
-        if rounding:
+        if rounding and len(self.rounding_fn) > 0:
             # Extract path
             active_edges = []
             found_path = False
@@ -291,6 +287,16 @@ class BaseGCS:
             if best_path is None:
                 print("Second solve failed on all paths.")
                 return best_path, best_result, results_dict
+        elif rounding:
+            self.options.max_rounded_paths = 10
+
+            rounded_result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
+            best_path = MipPathExtraction(self.gcs, rounded_result, self.source, self.target)[0]
+            best_result = rounded_result
+            results_dict["best_path"] = best_path
+            results_dict["best_result"] = best_result
+            results_dict["rounded_results"] = [rounded_result]
+            results_dict["rounded_cost"] = best_result.get_optimal_cost()
         else:
             best_path = MipPathExtraction(self.gcs, result, self.source, self.target)[0]
             best_result = result
