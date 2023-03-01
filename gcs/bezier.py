@@ -16,7 +16,9 @@ from pydrake.solvers.mathematicalprogram import(
     Binding,
     Constraint,
     Cost,
+    L1NormCost,
     L2NormCost,
+    LInfNormCost,
     LinearConstraint,
     LinearCost,
     LinearEqualityConstraint,
@@ -223,13 +225,23 @@ class BezierGCS(BaseGCS):
             for c in derivative_control:
                 A_ctrl = DecomposeLinearExpressions(c, self.u_vars)
                 H = A_ctrl.T.dot(A_ctrl) * 2 * weight / (1 + self.order - order)
-                reg_cost = QuadraticCost(H, np.zeros(H.shape[0]), 0)
+
+                # Quadratic regularization.
+                # reg_cost = QuadraticCost(H, np.zeros(H.shape[0]), 0)
+
+                # L1 regularization.
+                reg_cost = L1NormCost(H, np.zeros(H.shape[0]))
                 self.edge_costs.append(reg_cost)
+
+                # # # L-infinity regularization.
+                # reg_cost_2 = LInfNormCost(H, np.zeros(H.shape[0]))
+                # self.edge_costs.append(reg_cost_2)
 
                 for edge in self.gcs.Edges():
                     if edge.u() == self.source:
                         continue
                     edge.AddCost(Binding[Cost](reg_cost, edge.xu()))
+                    # edge.AddCost(Binding[Cost](reg_cost_2, edge.xu()))
 
     def addVelocityLimits(self, lower_bound, upper_bound):
         assert len(lower_bound) == self.dimension

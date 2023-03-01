@@ -199,6 +199,15 @@ class BaseGCS:
         self.options.preprocessing = preprocessing
         self.options.max_rounded_paths = 0
 
+        # Bunch of options for liner program IPM. The first is the important one
+        # that tells Mosek to not construct a basis after solving the LP.
+        self.options.solver_options.SetOption(MosekSolver.id(), 'MSK_IPAR_INTPNT_BASIS', 0)
+        self.options.solver_options.SetOption(MosekSolver.id(), 'MSK_DPAR_INTPNT_TOL_PFEAS', 1e-3)
+        self.options.solver_options.SetOption(MosekSolver.id(), 'MSK_DPAR_INTPNT_TOL_DFEAS', 1e-3)
+        self.options.solver_options.SetOption(MosekSolver.id(), 'MSK_DPAR_INTPNT_TOL_REL_GAP', 1e-3)
+        self.options.solver_options.SetOption(MosekSolver.id(), 'MSK_DPAR_INTPNT_TOL_INFEAS', 1e-3)
+        self.options.solver_options.SetOption(CommonSolverOption.kPrintFileName, 'mosek_log_relaxation.txt')
+
         result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
 
         if rounding:
@@ -219,6 +228,8 @@ class BaseGCS:
                   "Success:", result.get_solution_result(),
                   "Cost:", result.get_optimal_cost(),
                   "Solver time:", result.get_solver_details().optimizer_time)
+
+        self.options.solver_options.SetOption(CommonSolverOption.kPrintFileName, 'mosek_log_rounding.txt')
 
         # Solve with hard edge choices
         if rounding and len(self.rounding_fn) > 0:
