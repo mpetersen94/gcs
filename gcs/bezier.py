@@ -212,7 +212,7 @@ class BezierGCS(BaseGCS):
                     continue
                 edge.AddCost(Binding[Cost](energy_cost, edge.xu()))
 
-    def addDerivativeRegularization(self, weight_r, weight_h, order):
+    def addDerivativeRegularization(self, weight_r, weight_h, order, cost_type="quadratic"):
 
         assert isinstance(order, int) and 2 <= order <= self.order
         weights = [weight_r, weight_h]
@@ -226,22 +226,24 @@ class BezierGCS(BaseGCS):
                 A_ctrl = DecomposeLinearExpressions(c, self.u_vars)
                 H = A_ctrl.T.dot(A_ctrl) * 2 * weight / (1 + self.order - order)
 
-                # Quadratic regularization.
-                # reg_cost = QuadraticCost(H, np.zeros(H.shape[0]), 0)
+                if cost_type == "quadratic":
+                    # Quadratic regularization.
+                    reg_cost = QuadraticCost(H, np.zeros(H.shape[0]), 0)
+                elif cost_type == "l1":
+                    # L1 regularization.
+                    reg_cost = L1NormCost(H, np.zeros(H.shape[0]))
+                elif cost_type == "linf":
+                    # L-infinity regularization.
+                    reg_cost = LInfNormCost(H, np.zeros(H.shape[0]))
+                else:
+                    raise ValueError(
+                        f"Unknown cost type passed to derivative regularizer: {cost_type}")
 
-                # L1 regularization.
-                reg_cost = L1NormCost(H, np.zeros(H.shape[0]))
                 self.edge_costs.append(reg_cost)
-
-                # # # L-infinity regularization.
-                # reg_cost_2 = LInfNormCost(H, np.zeros(H.shape[0]))
-                # self.edge_costs.append(reg_cost_2)
-
                 for edge in self.gcs.Edges():
                     if edge.u() == self.source:
                         continue
                     edge.AddCost(Binding[Cost](reg_cost, edge.xu()))
-                    # edge.AddCost(Binding[Cost](reg_cost_2, edge.xu()))
 
     def addVelocityLimits(self, lower_bound, upper_bound):
         assert len(lower_bound) == self.dimension
