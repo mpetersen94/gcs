@@ -327,7 +327,7 @@ def getBezierGcsPath(plant, regions, sequence, order, continuity, hdot_min = 1e-
     gcs = BezierGCS(regions, order, continuity)
     gcs.addTimeCost(1)
     gcs.addPathLengthCost(1)
-    gcs.addDerivativeRegularization(1e-3, 1e-3, 2)
+    gcs.addDerivativeRegularization(1e-3, 1e-3, 2, cost_type="quadratic")
     gcs.addVelocityLimits(0.6*plant.GetVelocityLowerLimits(), 0.6*plant.GetVelocityUpperLimits())
     gcs.setPaperSolverOptions()
     gcs.setSolver(MosekSolver())
