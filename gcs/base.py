@@ -67,8 +67,11 @@ class BaseGCS:
             self.names = ["v" + str(ii) for ii in range(len(regions))]
         self.dimension = regions[0].ambient_dimension()
         self.regions = regions.copy()
+        # Parameters for performing python rounding.
         self.rounding_fn = []
         self.rounding_kwargs = {}
+        # Default number of rounded paths to search for when doing C++ rounding.
+        self.rounded_paths = 10
         for r in self.regions:
             assert r.ambient_dimension() == self.dimension
 
@@ -198,112 +201,140 @@ class BaseGCS:
         results_dict = {}
         self.options.convex_relaxation = rounding
         self.options.preprocessing = preprocessing
-        self.options.max_rounded_paths = 0
 
-        result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
+        if rounding and len(self.rounding_fn) == 0:
+            self.options.max_rounded_paths = self.rounded_paths
+            result, all_results = self.gcs.SolveShortestPathAllResults(self.source, self.target, self.options)
 
-        if rounding:
-            results_dict["relaxation_result"] = result
-            results_dict["relaxation_solver_time"] = result.get_solver_details().optimizer_time
-            results_dict["relaxation_cost"] = result.get_optimal_cost()
-        else:
-            results_dict["mip_result"] = result
-            results_dict["mip_solver_time"] = result.get_solver_details().optimizer_time
-            results_dict["mip_cost"] = result.get_optimal_cost()
+            results_dict["relaxation_result"] = all_results[0]
+            results_dict["relaxation_solver_time"] = all_results[0].get_solver_details().optimizer_time
+            results_dict["relaxation_cost"] = all_results[0].get_optimal_cost()
 
-        if not result.is_success():
-            print("First solve failed")
-            return None, None, results_dict
-
-        if verbose:
-            print("Solution\t",
-                  "Success:", result.get_solution_result(),
-                  "Cost:", result.get_optimal_cost(),
-                  "Solver time:", result.get_solver_details().optimizer_time)
-
-        # Solve with hard edge choices
-        if rounding and len(self.rounding_fn) > 0:
-            # Extract path
-            active_edges = []
-            found_path = False
-            for fn in self.rounding_fn:
-                rounded_edges = fn(self.gcs, result, self.source, self.target,
-                                   **self.rounding_kwargs)
-                if rounded_edges is None:
-                    print(fn.__name__, "could not find a path.")
-                    active_edges.append(rounded_edges)
-                else:
-                    found_path = True
-                    active_edges.extend(rounded_edges)
-            results_dict["rounded_paths"] = active_edges
-            if not found_path:
-                print("All rounding strategies failed to find a path.")
+            if not result.is_success():
+                print("GCS failed to solve")
                 return None, None, results_dict
 
-            self.options.preprocessing = False
-            rounded_results = []
-            best_cost = np.inf
-            best_path = None
-            best_result = None
-            max_rounded_solver_time = 0.0
-            total_rounded_solver_time = 0.0
-            for path_edges in active_edges:
-                if path_edges is None:
-                    rounded_results.append(None)
-                    continue
-                for edge in self.gcs.Edges():
-                    if edge in path_edges:
-                        edge.AddPhiConstraint(True)
-                    else:
-                        edge.AddPhiConstraint(False)
-                rounded_results.append(self.gcs.SolveShortestPath(
-                    self.source, self.target, self.options))
-                solve_time = rounded_results[-1].get_solver_details().optimizer_time
-                max_rounded_solver_time = np.maximum(solve_time, max_rounded_solver_time)
-                total_rounded_solver_time += solve_time
-                if (rounded_results[-1].is_success()
-                    and rounded_results[-1].get_optimal_cost() < best_cost):
-                    best_cost = rounded_results[-1].get_optimal_cost()
-                    best_path = path_edges
-                    best_result = rounded_results[-1]
-
-            results_dict["best_path"] = best_path
-            results_dict["best_result"] = best_result
-            results_dict["rounded_results"] = rounded_results
-            results_dict["max_rounded_solver_time"] =  max_rounded_solver_time
-            results_dict["total_rounded_solver_time"] = total_rounded_solver_time
-            results_dict["rounded_cost"] = best_result.get_optimal_cost()
-
             if verbose:
-                print("Rounded Solutions:")
-                for r in rounded_results:
-                    if r is None:
-                        print("\t\tNo path to solve")
-                        continue
-                    print("\t\t",
-                        "Success:", r.get_solution_result(),
-                        "Cost:", r.get_optimal_cost(),
-                        "Solver time:", r.get_solver_details().optimizer_time)
+                print("Solution\t",
+                    "Success:", result.get_solution_result(),
+                    "Cost:", result.get_optimal_cost(),
+                    "Solver time:", result.get_solver_details().optimizer_time)
 
-            if best_path is None:
-                print("Second solve failed on all paths.")
-                return best_path, best_result, results_dict
-        elif rounding:
-            self.options.max_rounded_paths = 10
-
-            rounded_result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
-            best_path = MipPathExtraction(self.gcs, rounded_result, self.source, self.target)[0]
-            best_result = rounded_result
-            results_dict["best_path"] = best_path
-            results_dict["best_result"] = best_result
-            results_dict["rounded_results"] = [rounded_result]
-            results_dict["rounded_cost"] = best_result.get_optimal_cost()
-        else:
             best_path = MipPathExtraction(self.gcs, result, self.source, self.target)[0]
             best_result = result
             results_dict["best_path"] = best_path
             results_dict["best_result"] = best_result
-            results_dict["mip_path"] = best_path
+            results_dict["rounded_results"] = all_results[1:]
+            results_dict["rounded_cost"] = best_result.get_optimal_cost()
+
+            max_rounded_solver_time = 0.0
+            total_rounded_solver_time = 0.0
+            for r in all_results[1:]:
+                solve_time = r.get_solver_details().optimizer_time
+                max_rounded_solver_time = np.maximum(solve_time, max_rounded_solver_time)
+                total_rounded_solver_time += solve_time
+            results_dict["max_rounded_solver_time"] =  max_rounded_solver_time
+            results_dict["total_rounded_solver_time"] = total_rounded_solver_time
+
+        else:
+            self.options.max_rounded_paths = 0
+            result = self.gcs.SolveShortestPath(self.source, self.target, self.options)
+
+            if rounding:
+                results_dict["relaxation_result"] = result
+                results_dict["relaxation_solver_time"] = result.get_solver_details().optimizer_time
+                results_dict["relaxation_cost"] = result.get_optimal_cost()
+
+                if not result.is_success():
+                    print("First solve failed")
+                    return None, None, results_dict
+
+                # Extract path
+                active_edges = []
+                found_path = False
+                for fn in self.rounding_fn:
+                    rounded_edges = fn(self.gcs, result, self.source, self.target,
+                                    **self.rounding_kwargs)
+                    if rounded_edges is None:
+                        print(fn.__name__, "could not find a path.")
+                        active_edges.append(rounded_edges)
+                    else:
+                        found_path = True
+                        active_edges.extend(rounded_edges)
+                results_dict["rounded_paths"] = active_edges
+                if not found_path:
+                    print("All rounding strategies failed to find a path.")
+                    return None, None, results_dict
+
+                self.options.preprocessing = False
+                rounded_results = []
+                best_cost = np.inf
+                best_path = None
+                best_result = None
+                max_rounded_solver_time = 0.0
+                total_rounded_solver_time = 0.0
+                for path_edges in active_edges:
+                    if path_edges is None:
+                        rounded_results.append(None)
+                        continue
+                    for edge in self.gcs.Edges():
+                        if edge in path_edges:
+                            edge.AddPhiConstraint(True)
+                        else:
+                            edge.AddPhiConstraint(False)
+                    rounded_results.append(self.gcs.SolveShortestPath(
+                        self.source, self.target, self.options))
+                    solve_time = rounded_results[-1].get_solver_details().optimizer_time
+                    max_rounded_solver_time = np.maximum(solve_time, max_rounded_solver_time)
+                    total_rounded_solver_time += solve_time
+                    if (rounded_results[-1].is_success()
+                        and rounded_results[-1].get_optimal_cost() < best_cost):
+                        best_cost = rounded_results[-1].get_optimal_cost()
+                        best_path = path_edges
+                        best_result = rounded_results[-1]
+
+                results_dict["best_path"] = best_path
+                results_dict["best_result"] = best_result
+                results_dict["rounded_results"] = rounded_results
+                results_dict["max_rounded_solver_time"] =  max_rounded_solver_time
+                results_dict["total_rounded_solver_time"] = total_rounded_solver_time
+                results_dict["rounded_cost"] = best_result.get_optimal_cost()
+
+                if verbose:
+                    print("Rounded Solutions:")
+                    for r in rounded_results:
+                        if r is None:
+                            print("\t\tNo path to solve")
+                            continue
+                        print("\t\t",
+                            "Success:", r.get_solution_result(),
+                            "Cost:", r.get_optimal_cost(),
+                            "Solver time:", r.get_solver_details().optimizer_time)
+
+                if best_path is None:
+                    print("Second solve failed on all paths.")
+                    return best_path, best_result, results_dict
+
+            else:
+                results_dict["mip_result"] = result
+                results_dict["mip_solver_time"] = result.get_solver_details().optimizer_time
+                results_dict["mip_cost"] = result.get_optimal_cost()
+
+                if not result.is_success():
+                    print("GCS failed to solve")
+                    return None, None, results_dict
+
+                best_path = MipPathExtraction(self.gcs, result, self.source, self.target)[0]
+                best_result = result
+                results_dict["best_path"] = best_path
+                results_dict["best_result"] = best_result
+                results_dict["mip_path"] = best_path
+
+                if verbose:
+                    print("Solution\t",
+                        "Success:", result.get_solution_result(),
+                        "Cost:", result.get_optimal_cost(),
+                        "Solver time:", result.get_solver_details().optimizer_time)
 
         if verbose:
             for edge in best_path:
