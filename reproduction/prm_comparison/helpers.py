@@ -535,12 +535,16 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
                 name="mat_traj_%d" % i,
                 **{"blend_method": "ADD"}
             )
+
+            radius = 0.01
+            if i >= 2:
+                radius = 0.0105
             for j, X in enumerate(X_list):
                 blender_color_cam.bsi.send_remote_call(
                     "register_object",
                     name="traj_%d_point_%d" % (i, j),
                     type="sphere",
-                    scale=[0.01, 0.01, 0.01],
+                    scale=[radius, radius, radius],
                     location=X.translation().tolist(),
                     material="mat_traj_%d" % i,
                 )
@@ -554,7 +558,7 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
                         "register_object",
                         name="traj_%d_link_%d" % (i, j-1),
                         type="cylinder",
-                        scale=[0.01, 0.01, dist/2],
+                        scale=[radius, radius, dist/2],
                         location=((x0 + x1)/2).tolist(),
                         quaternion=quat.tolist(),
                         material="mat_traj_%d" % i,
@@ -562,4 +566,4 @@ def render_trajectory(traj_list, camera_X, show_line = False, alpha = 0.5, filen
 
     context.SetTime(1.0)
     blender_context = blender_color_cam.GetMyContextFromRoot(context)
-    blender_color_cam.Publish(blender_context)
+    blender_color_cam.ForcedPublish(blender_context)
